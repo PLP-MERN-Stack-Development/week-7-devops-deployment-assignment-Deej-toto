@@ -1,0 +1,57 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ backend, frontend ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install and run tests (backend)
+        if: matrix.service == 'backend'
+        working-directory: ./backend
+        run: |
+          npm ci
+          npm test --silent
+
+      - name: Install and run tests (frontend)
+        if: matrix.service == 'frontend'
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm test -- --watchAll=false --silent
+
+  deploy:
+    needs: tests
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger Render deploy
+        env:
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          echo "Triggering Render deploy..."
+          curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys"                     -H "Accept: application/json"                     -H "Content-Type: application/json"                     -H "Authorization: Bearer ${RENDER_API_KEY}"                     -d '{"clearCache": true}'
+
+      - name: Trigger Netlify deploy
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          echo "Triggering Netlify deploy..."
+          curl -X POST "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds"                     -H "Content-Type: application/json"                     -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}"                     -d '{}'
